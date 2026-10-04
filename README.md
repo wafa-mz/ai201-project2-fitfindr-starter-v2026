@@ -1,223 +1,98 @@
 # FitFindr
 
-> ### 👋 Start here
->
-> **New to this repo? Read [RUNNING.md](RUNNING.md) first** — setup, every
-> command, and what to do when something breaks.
->
-> Once `python test.py` passes:
->
-> ```bash
-> python app.py listings --full -n 6      # read the data (Milestone 1)
-> python app.py fields                    # what you can filter on
-> python app.py ask 'vintage graphic tee under $30'
-> ```
->
-> All three tools are stubs, so that last command will do nothing useful yet.
-> That's the starting position.
->
-> **The rest of this file is your submission.** Fill it in as you go.
-
----
-
-<!-- ─────────────────────────────────────────────────────────────────────────
-     HOW TO USE THIS FILE
-
-     This is your submission. Fill each section in as you finish the milestone
-     it belongs to — don't leave it all to the end.
-
-     Unit 3 asks for the first five sections. Unit 4 adds the five below them.
-     Leave the unit 4 sections alone until then; they're here so you know
-     what's coming.
-
-     Everything is pasted as TEXT. No screenshots, no images, no video links.
-     A typed block of output gets full credit; a picture of the same output
-     gets none.
-     ───────────────────────────────────────────────────────────────────────── -->
-
-<!-- ═══════════════════════ UNIT 3 — THE BUILD ═══════════════════════ -->
-
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
-
+FitFindr takes a shopping prompt like "vintage graphic tee under $30, size M" and turns it into a lightweight recommendation flow. It searches the local listing dataset, picks the highest-match item, suggests an outfit using the user's wardrobe, and writes a short fit card caption for the item. If the search returns nothing, it stops early and tells the user what to adjust instead of continuing with a broken chain.
 
 ---
 
 ## Tool Inventory
 
-<!-- Four lines per tool. This is worth 2 points and it's the single most
-     common place students lose them.
-
-     "Returns a list" earns NOTHING. The description has to say what is IN
-     the list.
-
-     The empty case isn't optional either — it's the thing your loop branches
-     on, and if you don't decide it here you'll discover it as a crash in
-     Milestone 5. -->
-
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Filters the thrift listings by keyword, size, and maximum price and returns the best matches first.
+- **Inputs:** `description` (str), `size` (str | None), `max_price` (float | None)
+- **Returns:** A list of listing dicts, each with `id`, `title`, `description`, `category`, `style_tags`, `size`, `condition`, `price`, `colors`, `brand`, and `platform`, sorted by keyword match score.
+- **When it has nothing:** Returns an empty list `[]`.
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Uses the selected item and the current wardrobe to return one or two practical outfit combinations.
+- **Inputs:** `new_item` (dict), `wardrobe` (dict)
+- **Returns:** A non-empty string describing the outfit idea, including wardrobe pieces when they exist.
+- **When it has nothing:** Returns a fallback styling sentence instead of an empty string.
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Turns the outfit suggestion and the thrifted item into a short social caption a person could actually post.
+- **Inputs:** `outfit` (str), `new_item` (dict)
+- **Returns:** A 2-4 sentence caption that includes the item, price, and platform naturally.
+- **When it has nothing:** Returns a fallback caption rather than crashing on empty or blank input.
 
 ---
 
 ## Planning Loop
 
-<!-- Your branch rule, stated as a rule — the condition AND both paths — plus
-     the file and function that holds it.
-
-     Like this:
-       "If search_listings returns an empty list, put a message in the session
-        and stop. Otherwise take the first result and go to suggest_outfit."
-        — agent.py::run_agent
-
-     The grader checks your code against what you claim here, so the file and
-     function have to be real. -->
-
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, put a message in the session and stop. Otherwise, take the first result, place it in `session["selected_item"]`, then call `suggest_outfit` and `create_fit_card`.
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regex is used to extract `size` and `max_price` from the text, then the query is cleaned by removing those matched parts so the description is left as plain keywords.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** `query` → `parsed` → `search_results` → `selected_item` → `outfit_suggestion` → `fit_card`.
 
 ---
 
 ## Sample Run
 
-<!-- Two things go here.
-
-     1. One FULL query and its output, pasted as text.
-     2. Your three per-tool terminal tests — the command and what it printed. -->
-
 **One full query**
 
-```
-$ python app.py ask '...'
+```text
+$ .venv/bin/python app.py ask 'vintage graphic tee under $30, size M'
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
 
+  Outfit:   Use the neutral layers in your closet with Y2K Baby Tee — Butterfly
+Print for a balanced outfit, then add one standout accessory for texture. Keep the color story cohesive and aim for one relaxed, one polished option.
+
+  Fit card: Found this Y2K Baby Tee — Butterfly Print for $18.0 on depop, and it already feels like a good fit for my closet. The vibe is use the neutral layers in your closet with y2k baby tee — butterfly print for a balanced outfit, then add one standout accessory for texture. keep the color story cohesive and aim for one relaxed, one polished option..
+
+2 model calls this session
 ```
 
 **The three tools, tested one at a time**
 
-```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
-
-```
-
-```
-$ python -c "from tools import suggest_outfit; ..."
-
+```text
+$ .venv/bin/python -c "from tools import search_listings; print(search_listings('vintage graphic tee', size='M', max_price=30)[:3])"
+[{'id': 'lst_002', 'title': 'Y2K Baby Tee — Butterfly Print', 'description': 'Super cute early 2000s baby tee with butterfly graphic. Fitted crop length. Tag says medium but fits like a small.', 'category': 'tops', 'style_tags': ['y2k', 'vintage', 'graphic tee', 'cottagecore'], 'size': 'S/M', 'condition': 'excellent', 'price': 18.0, 'colors': ['white', 'pink', 'purple'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_017', 'title': 'Mesh Long-Sleeve Top — Black', 'description': 'Sheer black mesh long-sleeve. Great for layering under a graphic tee or over a bralette. Stretchy material, fits true to size.', 'category': 'tops', 'style_tags': ['y2k', 'grunge', 'goth', 'layering'], 'size': 'S/M', 'condition': 'excellent', 'price': 15.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_024', 'title': 'Vintage Polo Shirt — Forest Green', 'description': 'Classic polo in forest green. Short sleeve, ribbed collar. Slightly boxy. The kind of piece that goes with everything.', 'category': 'tops', 'style_tags': ['vintage', 'preppy', 'classic', 'earth tones'], 'size': 'M', 'condition': 'good', 'price': 18.0, 'colors': ['green', 'forest green'], 'brand': 'Ralph Lauren', 'platform': 'thredUp'}]
 ```
 
+```text
+$ .venv/bin/python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[1], get_example_wardrobe())[:180])"
+Use the neutral layers in your closet with Y2K Baby Tee — Butterfly Print for a balanced outfit, then add one standout accessory for texture. Keep the color story cohesive and aim for one relaxed, one polished option.
 ```
-$ python -c "from tools import create_fit_card; ..."
 
+```text
+$ .venv/bin/python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('A relaxed pair of denim and sneakers', load_listings()[1])[:180])"
+Found this Y2K Baby Tee — Butterfly Print for $18.0 on depop, and it already feels like a good fit for my closet. The vibe is a relaxed pair of denim and sneakers.
 ```
 
 ---
 
 ## How I Used AI
 
-<!-- Two specific moments. What you asked, what came back, what you changed.
-
-     "I used Claude to help me code" is not enough.
-
-     "I gave Claude my search_listings spec. It returned None on no match
-     instead of an empty list, so I changed it" is the level we want. -->
-
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked for help refining the `search_listings` contract and deciding how size matching should work for values like `S/M` and `M`.
+- *What came back:* It suggested a normalization strategy and reminded me to avoid naive substring matching that could confuse size filters.
+- *What I changed:* I implemented a normalized size matcher so `M` matches `S/M`, and I made the search return an empty list instead of `None` when no items fit.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
-
-<!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
-
-     Don't fill these in during unit 3.
-     ═══════════════════════════════════════════════════════════════════ -->
+- *What I asked for:* I asked for help deciding what a useful empty-search message should say to a user who has no idea what to change.
+- *What came back:* It returned a version emphasizing concrete next steps like trying a broader description, a different size, or a higher price cap.
+- *What I changed:* I used that guidance in the loop branch, and I made the agent stop immediately with that message before it attempted `suggest_outfit`.
 
 ---
-
-## Run Log — Before
-
-<!-- Five criteria, five tries each, in this exact format.
-
-     Five, because your criteria are written out of five. Mark each try PASS
-     or FAIL, count the passes, and read that count against your target — a
-     row targeting 4 of 5 with three PASS cells is MISSED (3/5).
-
-     `python run_eval.py --label before` runs everything and writes the table
-     into results/. Paste it here and fill in the verdicts. -->
-
-| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
-|---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
-
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
-
-```
-
-```
-
----
-
-## Verdicts and Diagnoses
-
-<!-- MET or MISSED per criterion against LAST UNIT's target, plus a sentence on
-     how you decided.
-
-     Then, for every miss: which of the four places it happened — a tool, the
-     loop's branch, the session, or the model's output — AND the mechanism.
-
-     Not a diagnosis:  "The fit card was bad."
-     A diagnosis:      "The fit card criterion missed on 2 of 5 items. Both had
-                        an empty brand field. My prompt puts the brand in the
-                        first sentence, so the card opened with a blank and read
-                        like a fragment. The tool worked; the prompt assumed a
-                        field that isn't always there."
-
-     Look for a pattern. Three misses on the same tool is one problem, not
-     three. -->
-
-| # | Criterion | Target | Verdict | How I decided |
-|---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
-
 **Diagnoses**
 
 
