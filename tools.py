@@ -23,7 +23,7 @@ the description has to say what is *in* the list.
 import re
 
 import config  # noqa: F401 — you'll use this in search_listings
-from generate import generate
+from generate import ModelUnavailable, generate
 from utils.data_loader import load_listings
 
 
@@ -178,6 +178,8 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
         system = "You are a thoughtful wardrobe stylist. Give concise styling advice in plain English."
         try:
             response = generate(prompt, system=system)
+        except ModelUnavailable:
+            raise
         except Exception:
             response = (
                 f"Wear {item_name} with relaxed straight-leg denim and a clean sneaker for an easy, everyday look. "
@@ -205,6 +207,8 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
     system = "You are a fashion stylist. Use only the wardrobe items the user listed. Keep it practical and conversational."
     try:
         response = generate(prompt, system=system)
+    except ModelUnavailable:
+        raise
     except Exception:
         response = (
             f"Use the neutral layers in your closet with {item_name} for a balanced outfit, then add one standout accessory for texture. "
@@ -256,6 +260,8 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
     system = "You are a fashion content creator writing a short, casual caption. Keep it vivid and concise."
     try:
         response = generate(prompt, system=system)
+    except ModelUnavailable:
+        raise
     except Exception:
         response = (
             f"Found this {item_title} for ${item_price} on {item_platform}, and it already feels like a good fit for my closet. "

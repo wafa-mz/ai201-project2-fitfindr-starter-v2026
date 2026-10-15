@@ -17,7 +17,8 @@ import re
 
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
+from mcp_client import call_tool
+from tools import suggest_outfit, create_fit_card
 from generate import ModelUnavailable
 
 
@@ -104,10 +105,37 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             "max_price": max_price,
         }
 
-        session["search_results"] = search_listings(
-            description=session["parsed"]["description"],
-            size=session["parsed"]["size"],
-            max_price=session["parsed"]["max_price"],
+        search_inputs = {
+            "description": session["parsed"]["description"],
+            "size": session["parsed"]["size"],
+            "max_price": session["parsed"]["max_price"],
+        }
+        trace.step(
+            "search_listings (via MCP)",
+            inputs=search_inputs,
+            returned=None,
+            note="querying listings through the MCP tool",
+        )
+
+        try:
+            session["search_results"] = call_tool("search_listings", search_inputs)
+        except Exception as exc:  # noqa: BLE001 — convert a protocol failure into a user-facing stop
+            session["error"] = (
+                "The listing search tool is unavailable right now. Try the query again in a moment."
+            )
+            trace.step(
+                "search_listings (via MCP)",
+                inputs=search_inputs,
+                returned=f"MCP failure: {type(exc).__name__}: {exc}",
+                note="tool failed; stopping before the rest of the loop",
+            )
+            return session
+
+        trace.step(
+            "search_listings (via MCP)",
+            inputs=search_inputs,
+            returned=session["search_results"],
+            note="branch: empty result or continue",
         )
 
         if not session["search_results"]:
@@ -117,8 +145,51 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             return session
 
         session["selected_item"] = session["search_results"][0]
-        session["outfit_suggestion"] = suggest_outfit(session["selected_item"], wardrobe)
-        session["fit_card"] = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+
+        try:
+            session["outfit_suggestion"] = suggest_outfit(session["selected_item"], wardrobe)
+            trace.step(
+                "suggest_outfit",
+                inputs={
+                    "new_item": session["selected_item"].get("title"),
+                    "wardrobe_items": len(wardrobe.get("items", [])) if isinstance(wardrobe, dict) else 0,
+                },
+                returned=session["outfit_suggestion"],
+            )
+        except ModelUnavailable:
+            session["error"] = (
+                "The model couldn't be reached. Check your internet connection or GEMINI_API_KEY and try again."
+            )
+            trace.step(
+                "suggest_outfit",
+                inputs={"new_item": session["selected_item"].get("title")},
+                returned="ModelUnavailable",
+                note="model unavailable; stop and tell the user",
+            )
+            return session
+
+        try:
+            session["fit_card"] = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+            trace.step(
+                "create_fit_card",
+                inputs={
+                    "item": session["selected_item"].get("title"),
+                    "outfit_length": len(session["outfit_suggestion"] or ""),
+                },
+                returned=session["fit_card"],
+            )
+        except ModelUnavailable:
+            session["error"] = (
+                "The model couldn't be reached. Check your internet connection or GEMINI_API_KEY and try again."
+            )
+            trace.step(
+                "create_fit_card",
+                inputs={"item": session["selected_item"].get("title")},
+                returned="ModelUnavailable",
+                note="model unavailable; stop and tell the user",
+            )
+            return session
+
         return session
 
     session["error"] = "The loop ran longer than expected. Try a simpler search."

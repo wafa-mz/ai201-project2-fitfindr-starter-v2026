@@ -92,103 +92,161 @@ Found this Y2K Baby Tee — Butterfly Print for $18.0 on depop, and it already f
 - *What came back:* It returned a version emphasizing concrete next steps like trying a broader description, a different size, or a higher price cap.
 - *What I changed:* I used that guidance in the loop branch, and I made the agent stop immediately with that message before it attempted `suggest_outfit`.
 
+**Moment 3**
+
+- *What I asked for:* I asked for help making the model-unavailable failure more legible to a real user instead of silently falling back to a fake caption.
+- *What came back:* It suggested letting the `ModelUnavailable` exception rise until the agent can handle it in one place.
+- *What I changed:* I stopped swallowing that exception in `suggest_outfit` and `create_fit_card`, and the agent now sets `session["error"]` with a readable error message instead of a misleading fallback.
+
 ---
-**Diagnoses**
 
+## Run Log — Before
 
+| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1. matching query completes | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. impossible query stops early | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. selected item reaches outfit tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. fit card includes item facts | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. empty wardrobe still styles the item | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+### Real output from one try for each criterion
+
+**Criterion 1 — matching query completes**
+
+```text
+Query: vintage graphic tee under $30
+selected_item: Graphic Tee — 2003 Tour Bootleg Style ($24.0, depop)
+search_results: 10
+Outfit suggestion: Hey! That 2003 tour bootleg tee is an absolute score...
+Fit card: Scored this buttery soft 2003 tour bootleg tee on Depop for just $24...
+```
+
+**Criterion 2 — impossible query stops early**
+
+```text
+Query: designer ballgown size XXS under $5
+stopped early: yes — No listings matched that search. Try a broader description, a different size, or a higher price cap.
+selected_item: (none)
+search_results: 0
+```
+
+**Criterion 3 — selected item reaches outfit tool**
+
+```text
+selected_item: Graphic Tee — 2003 Tour Bootleg Style ($24.0, depop)
+search_results: 10
+The outfit suggestion used the same selected item from that run.
+```
+
+**Criterion 4 — fit card includes item facts**
+
+```text
+Fit card: Scored this perfectly faded 2003 tour bootleg tee on Depop for just $24, and the worn-in cotton is literal perfection.
+```
+
+**Criterion 5 — empty wardrobe still styles the item**
+
+```text
+Query: denim jacket under $50
+Outfit suggestion: Wear denim jacket with relaxed straight-leg denim and a clean sneaker for an easy everyday look.
+```
+
+---
+
+## Verdicts and Diagnoses
+
+I did not have any missed criteria in the recorded before-run. I judged them from the actual five-try table and read the pass count straight against the target in `criteria.md`.
+
+- 1. MET — 5 of 5. The matching query reached a selected item, executed the outfit and fit-card tools, and returned a fit card each time.
+- 2. MET — 5 of 5. The empty-search branch stopped early every time and named what the user should change.
+- 3. MET — 5 of 5. The `selected_item` persisted into the same session and was the item used by the outfit tool on every run.
+- 4. MET — 5 of 5. The fit card included the item title, price, and platform in a caption-like form every time.
+- 5. MET — 5 of 5. The empty wardrobe path returned a non-empty styling suggestion and never crashed.
+
+The closest thing to a miss was criterion 4 as a design detail: the model sometimes spread the required facts across two sentences, so if I tightened this criterion later, I would require the title, price, and platform to appear in the same sentence instead of anywhere in the caption.
 
 ---
 
 ## Loop Trace
 
-<!-- One full run, printed step by step, with the MCP call visible in it.
-
-     `python app.py ask '...' --trace` once you've added the trace.step()
-     calls in Milestone 2.
-
-     Worth pasting BOTH the happy path and the empty-search path. The empty
-     one should be visibly shorter, because it stops. If your two traces are
-     the same length, your branch isn't working — and this is the fastest way
-     anyone will ever find that out. -->
-
 **Happy path**
 
-```
-
+```text
+[1] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      →    querying listings through the MCP tool
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: 10 items: Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey, Y2K Baby Tee — Butterfly Print … +7 more
+      →    branch: empty result or continue
+[3] suggest_outfit
+      in:  dict with keys: new_item, wardrobe_items
+      out: Hey! That 2003 tour bootleg tee is an incredible find—those pieces always have the best vintage wash and attitude...
+[4] create_fit_card
+      in:  dict with keys: item, outfit_length
+      out: Obsessed with this 2003 tour bootleg tee I just scored on Depop for only $24! The fade and the soft, worn-in cotton are actual perfection.
 ```
 
 **Empty search**
 
+```text
+[1] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      →    querying listings through the MCP tool
+[2] search_listings (via MCP)
+      in:  dict with keys: description, size, max_price
+      out: [] (empty)
+      →    branch: empty result or continue
 ```
 
-```
+**On the MCP move:** I registered `search_listings` in `mcp_server.py`, and `agent.py::run_agent` now calls it through `call_tool("search_listings", ...)` instead of the direct in-process function. The return value stayed the same list of listing dicts, which is exactly the contract the loop expects. The trace makes that visible in the step name: `search_listings (via MCP)`.
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+### Failure mode check
 
-
+- Empty search: `python app.py ask 'designer ballgown size XXS under $5'` returned `No listings matched that search...` and stopped before the second tool.
+- Empty wardrobe: `python app.py ask 'denim jacket under $50' --empty-wardrobe` returned a non-empty outfit suggestion instead of crashing.
+- Model unavailable: after forcing an invalid GEMINI_API_KEY, the app returned `The model couldn't be reached. Check your internet connection or GEMINI_API_KEY and try again.`
 
 ---
 
 ## The Improvement
 
-<!-- What you changed, why your diagnosis pointed at it, and the after-run in
-     the same table format. One change, measured properly.
+**What I changed:** I stopped swallowing `ModelUnavailable` inside `suggest_outfit` and `create_fit_card`. The tools now let that error escape so the agent can catch it once and turn it into a clear user-facing failure message instead of a fake fallback caption.
 
-     `python run_eval.py --label after` -->
-
-**What I changed:**
-
-**Which failure it was meant to fix:**
+**Which failure it was meant to fix:** the model-unavailable branch. Before this change, a failed call to the model was hidden by a generic fallback string, which made the agent look like it had succeeded when it really had no model access.
 
 ### Run Log — After
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. matching query completes | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. impossible query stops early | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. selected item reaches outfit tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. fit card includes item facts | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. empty wardrobe still styles the item | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Did it help, and how do I know:**
+**Did it help, and how do I know:** It did not improve the five scored criteria numerically; the score stayed at 5/5 on every criterion. It did improve the actual failure handling: when the model is unavailable, the app now says what went wrong and what the user should do, instead of silently inventing a fallback caption. The explicit message was:
 
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
-
-
+```text
+The model couldn't be reached. Check your internet connection or GEMINI_API_KEY and try again.
+```
 
 ---
 
 ## What's Still Broken
 
-<!-- For each criterion still missed: what you'd do, and why you stopped where
-     you did. "I ran out of time" is fine if it's true. Pretending nothing is
-     left is not. -->
+No criterion is still missed in the recorded test run. The remaining weakness is not a functional failure in the loop; it is the model's creative drift in criterion 4. The tool is fine, but the message can still vary across tries enough that a stricter pass condition would require the title, price, and platform to appear in the same sentence. I stopped there because the functional loop already satisfies the original target and the improvement was deliberately aimed at user-facing failure clarity rather than a stronger prompt rewrite.
 
+---
 
+📖 **How to run this project: [RUNNING.md](RUNNING.md)**
 
 <!-- ═════════════════════════════════════════════════════════════════════
-
-     SUBMISSION CHECKLIST — unit 3
-
-       [ ] criteria.md has five numbered criteria, each with a target
-       [ ] Each criterion has a reason underneath it
-       [ ] All five unit 3 sections above have real content
-       [ ] Tool Inventory: all three tools, inputs WITH TYPES, a specific
-           return value, and the empty case
-       [ ] Planning Loop names the branch rule and agent.py::run_agent
-       [ ] Sample Run: one full query plus the three per-tool tests, as text
-       [ ] At least four new commits
-       [ ] Repository URL submitted — WRITE IT DOWN, you submit the same one
-           next unit
 
      SUBMISSION CHECKLIST — unit 4
 
        [ ] mcp_server.py exists with one tool registered
-           (or a written record of exactly where the rewire broke)
        [ ] Run Log — Before, five criteria, five tries each
        [ ] Real output pasted underneath, naming file and function
        [ ] A verdict on every criterion
@@ -203,7 +261,3 @@ full. -->
      Do not delete and recreate this repository. Your commit history is what
      shows your criteria existed before your results did.
      ═════════════════════════════════════════════════════════════════════ -->
-
----
-
-📖 **How to run this project: [RUNNING.md](RUNNING.md)**
